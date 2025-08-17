@@ -19,6 +19,7 @@ void EmotionEngine::operatorNext(uint32_t nowMs){
     total += adjacencyWeight(cur,i);
     total += recencyWeight(i);
     total += patternRecencyWeight(cur,i);
+    total += biasWeight(i);
     w[i] = total;
   }
   uint8_t next = pickWeighted(w, count);
@@ -59,36 +60,14 @@ uint8_t EmotionEngine::pickWeighted(uint16_t* w, uint8_t count){
   return (uint8_t)(count-1);
 }
 
-EmotionVec EmotionEngine::moodVec(uint8_t i){
-  switch ((Mood)i){
-    case Mood::Serenity:     return { +40,  -30 };
-    case Mood::Joy:          return { +80,  +10 };
-    case Mood::Excitement:   return { +70,  +80 };
-    case Mood::Love:         return { +65,  +30 };
-    case Mood::Pride:        return { +50,  +20 };
-    case Mood::Determination:return { +20,  +60 };
-    case Mood::Playful:      return { +70,  +60 };
-    case Mood::Curiosity:    return { +25,  +40 };
-    case Mood::Confusion:    return { -10,  +45 };
-    case Mood::Surprise:     return { +10,  +90 };
-    case Mood::Sadness:      return { -70,  -30 };
-    case Mood::Melancholy:   return { -50,  -50 };
-    case Mood::Anger:        return { -80,  +85 };
-    case Mood::Panic:        return { -90,  +95 };
-    case Mood::Fear:         return { -80,  +70 };
-    case Mood::Sleepy:       return {  -5,  -80 };
-    default:                 return {   0,    0 };
-  }
-}
-
 uint16_t EmotionEngine::baseWeight(uint8_t toIdx) const {
   (void)toIdx; return 200;
 }
 
 uint16_t EmotionEngine::adjacencyWeight(uint8_t fromIdx, uint8_t toIdx) const {
   if (fromIdx == toIdx) return 40;
-  EmotionVec a = const_cast<EmotionEngine*>(this)->moodVec(fromIdx);
-  EmotionVec b = const_cast<EmotionEngine*>(this)->moodVec(toIdx);
+  EmotionVec a = moodVec(fromIdx);
+  EmotionVec b = moodVec(toIdx);
   int16_t dv = (int16_t)a.valence - (int16_t)b.valence;
   int16_t da = (int16_t)a.arousal - (int16_t)b.arousal;
   uint16_t dist = (uint16_t)(abs(dv) + abs(da));
@@ -117,4 +96,55 @@ uint16_t EmotionEngine::patternRecencyWeight(uint8_t fromIdx, uint8_t toIdx) con
   // same pattern -> penalty
   uint16_t pen = (uint16_t)patternPenalty;
   return (uint16_t)(200 - pen); // lower is worse; combined with others
+}
+
+void EmotionEngine::setExternalBias(uint8_t arousalBias, uint8_t valenceBias, bool valid){
+  extArousal  = arousalBias;
+  extValence  = valenceBias;
+  extBiasValid = valid;
+}
+
+// Map each Mood to a signed (valence, arousal) in [-100..+100]
+EmotionVec EmotionEngine::moodVec(uint8_t i) const {
+  using M = Mood;
+  switch ((M)i){
+    case M::Serenity:      return { +70,  -60 };
+    case M::Joy:           return { +90,  +40 };
+    case M::Excitement:    return { +85,  +90 };
+    case M::Love:          return { +95,  +45 };
+    case M::Pride:         return { +65,  +35 };
+    case M::Determination: return { +40,  +55 };
+    case M::Playful:       return { +75,  +65 };
+    case M::Curiosity:     return { +40,  +30 };
+    case M::Confusion:     return { -20,  +25 };
+    case M::Surprise:      return { +10,  +85 }; // near-neutral valence, high arousal
+    case M::Sadness:       return { -80,  -50 };
+    case M::Melancholy:    return { -60,  -65 };
+    case M::Anger:         return { -70,  +75 }; // negative valence, high arousal
+    case M::Panic:         return { -90,  +95 };
+    case M::Fear:          return { -85,  +80 };
+    case M::Sleepy:        return {  +5,  -90 };
+    default:               return {   0,    0 };
+  }
+}
+
+// Turn external bias (0..255) into signed [-100..+100], dot with mood, scale → 0..200
+uint16_t EmotionEngine::biasWeight(uint8_t toIdx) const {
+  if (!extBiasValid) return 0;
+
+  // Map 0..255 -> -100..+100 (128~neutral)
+  int16_t bA = ((int16_t)extArousal * 200 / 255) - 100;
+  int16_t bV = ((int16_t)extValence * 200 / 255) - 100;
+
+  EmotionVec mv = moodVec(toIdx);
+
+  // Dot product in [-20000..+20000]
+  int32_t dot = (int32_t)bA * (int32_t)mv.arousal + (int32_t)bV * (int32_t)mv.valence;
+
+  // Scale to approx 0..200; ignore negatives (don’t punish, just don’t boost)
+  // 20000 / 100 = 200
+  int16_t boost = (int16_t)(dot / 100);
+  if (boost < 0) boost = 0;
+  if (boost > 200) boost = 200;
+  return (uint16_t)boost;
 }
