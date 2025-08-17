@@ -40,12 +40,11 @@ static const uint16_t LSM303_I2C_CLOCK_KHZ      = 100;  // 100 kHz = safer cabli
 #define ACCEL_GATE_MIN_DELTA       24    // calm/active threshold
 #define ACCEL_SCALE_SHIFT          2     // delta >> 2 → 0..255 range
 
-
 // --- Startle Tuning (ACTIVE mode) ---
-#define STARTLE_ABS_ON            140   // absolute delta threshold to arm startle
-#define STARTLE_JERK_ON           110   // jerk threshold to arm startle
-#define STARTLE_CONFIRM_SAMPLES     2   // consecutive samples needed to fire
+#define STARTLE_ABS_ON             40   // absolute delta threshold to arm startle
+#define STARTLE_JERK_ON            30   // jerk threshold to arm startle
+#define STARTLE_CONFIRM_SAMPLES     1   // consecutive samples needed to fire
 #define STARTLE_MS                900   // startle flag duration (ms)
-#define STARTLE_COOLDOWN        4000   // minimum gap between startles (ms)
+#define STARTLE_COOLDOWN         4000   // minimum gap between startles (ms)
 
 #endif // CONFIG_H

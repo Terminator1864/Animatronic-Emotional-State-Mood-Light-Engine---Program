@@ -65,26 +65,45 @@ public:
 
     uint32_t delta = (l1 > baseline_) ? (l1 - baseline_) : (baseline_ - l1);
 
-    // ---- Startle detection (rising-edge, confirm, cooldown) ----
+    // ---- Startle detection (rising-edge, short window confirm, cooldown) ----
     static uint32_t startleUntil = 0;
     static uint32_t startleCooldownUntil = 0;
-    static uint32_t lastDelta = 0;
+    static uint32_t dPrev1 = 0;
+    static uint32_t dPrev2 = 0;
     static uint8_t  startleArm = 0;
 
-    // Use Config.h knobs
     const uint16_t ABS_ON      = STARTLE_ABS_ON;
     const uint16_t JERK_ON     = STARTLE_JERK_ON;
     const uint8_t  CONFIRM_N   = STARTLE_CONFIRM_SAMPLES;
     const uint16_t DUR_MS      = STARTLE_MS;
     const uint16_t COOLDOWN_MS = STARTLE_COOLDOWN;
 
-    // Consider startle only when clearly active (above the Schmitt 'on' threshold)
-    const uint16_t ACTIVE_GATE_ON = ACCEL_GATE_MIN_DELTA + 6;
+    // Short moving peak to catch brief spikes between samples (≤ ~120 ms)
+    uint32_t peakDelta = delta;
+    if (dPrev1 > peakDelta) peakDelta = dPrev1;
+    if (dPrev2 > peakDelta) peakDelta = dPrev2;
 
-    uint32_t jerk = (delta > lastDelta) ? (delta - lastDelta) : 0;
-    lastDelta = delta;
+    // Jerk window (max of the last two frame-to-frame deltas)
+    uint32_t jerk1 = (delta  > dPrev1) ? (delta  - dPrev1) : (dPrev1 - delta);
+    uint32_t jerk2 = (dPrev1 > dPrev2) ? (dPrev1 - dPrev2) : (dPrev2 - dPrev1);
+    uint32_t jerkMax = (jerk1 > jerk2) ? jerk1 : jerk2;
 
-    bool risingHit = (delta >= ACTIVE_GATE_ON) && (delta >= ABS_ON || jerk >= JERK_ON);
+    // Only consider startle once motion is clearly above calm (ACTIVE gate)
+    const uint16_t ACTIVE_GATE_ON = ACCEL_GATE_MIN_DELTA;
+
+    // --- Telemetry For Threshold Tuning (prints only when SENSE:DIAG:ON) ---
+    if (diag_) {
+        Serial.print(F("[SENSE] delta="));   Serial.print((unsigned)delta);
+        Serial.print(F(" peak="));           Serial.print((unsigned)peakDelta);
+        Serial.print(F(" jerkMax="));        Serial.print((unsigned)jerkMax);
+        Serial.print(F(" gate="));           Serial.print((unsigned)ACTIVE_GATE_ON);
+        Serial.print(F(" absOn="));          Serial.print((unsigned)ABS_ON);
+        Serial.print(F(" jerkOn="));         Serial.println((unsigned)JERK_ON);
+    }
+
+    bool activeEnough = (peakDelta >= ACTIVE_GATE_ON);
+
+    bool risingHit = activeEnough && (peakDelta >= ABS_ON || jerkMax >= JERK_ON);
 
     if (!risingHit) {
         startleArm = 0;
@@ -93,6 +112,12 @@ public:
             if ((int32_t)(nowMs - startleCooldownUntil) >= 0) {
                 startleUntil = nowMs + DUR_MS;
                 startleCooldownUntil = nowMs + COOLDOWN_MS;
+                if (diag_) {
+                    Serial.print(F("[SENSE] STARTLE! d="));
+                    Serial.print((unsigned)peakDelta);
+                    Serial.print(F(" j="));
+                    Serial.println((unsigned)jerkMax);
+                }
             }
             startleArm = 0;
         } else {
@@ -100,33 +125,37 @@ public:
         }
     }
 
+    // Update the small window
+    dPrev2 = dPrev1;
+    dPrev1 = delta;
+
     // Robust to millis() wraparound
     out.startled = (int32_t)(startleUntil - nowMs) > 0;
 
-// ---- Schmitt (hysteresis) gate - replaces old "Noise gate" block ----
+    // ---- Schmitt (hysteresis) gate - replaces old "Noise gate" block ----
     static bool gateOpen = false;
     const uint16_t SCHMITT_TH_ON  = ACCEL_GATE_MIN_DELTA + 6;  // enter active
     const uint16_t SCHMITT_TH_OFF = ACCEL_GATE_MIN_DELTA + 2;  // leave active
 
     if (!gateOpen) {
         if (delta < SCHMITT_TH_ON) {
-        if (diag_) {
-            Serial.print(F("[SENSE] idle delta="));
-            Serial.println((unsigned)delta);
+            if (diag_) {
+                Serial.print(F("[SENSE] idle delta="));
+                Serial.println((unsigned)delta);
+            }
+            out.valid = false;      // stay calm
+            return out;
         }
-        out.valid = false;      // stay calm
-        return out;
-        }
-        gateOpen = true;          // crossed into active
+        gateOpen = true;            // crossed into active
     } else {
         if (delta < SCHMITT_TH_OFF) {
-        gateOpen = false;       // drop back to calm
-        if (diag_) {
-            Serial.print(F("[SENSE] close delta="));
-            Serial.println((unsigned)delta);
-        }
-        out.valid = false;
-        return out;
+            gateOpen = false;       // drop back to calm
+            if (diag_) {
+                Serial.print(F("[SENSE] close delta="));
+                Serial.println((unsigned)delta);
+            }
+            out.valid = false;
+            return out;
         }
     }
     // (fall-through when gate is open)

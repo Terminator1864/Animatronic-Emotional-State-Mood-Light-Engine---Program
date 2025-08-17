@@ -109,7 +109,7 @@ void loop() {
 
   // --- Startle: trigger ONLY on the rising edge, use softer boost ---
   if (sigs.startled && !prevStartled) {
-    engine.setStartleBoost(120, 1200);           // was 180,2000 → gentler and shorter
+    engine.setStartleBoost(160, 1200);           // was 180,2000 → gentler and shorter
   }
   prevStartled = sigs.startled;
 }
