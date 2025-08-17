@@ -37,7 +37,7 @@ static constexpr uint8_t DEFAULT_PATTERN_PENALTY = 120;
 static const uint16_t LSM303_I2C_CLOCK_KHZ      = 100;  // 100 kHz = safer cabling; bump to 400 if rock solid
 static const uint16_t ACCEL_SAMPLE_INTERVAL_MS  = 16;   // ~62.5 Hz
 static const uint8_t  ACCEL_EWMA_ALPHA          = 24;   // 0..255 (higher = snappier)
-static const uint16_t ACCEL_GATE_MIN_DELTA      = 10;   // noise gate on motion envelope (raw L1 delta)
-static const uint8_t  ACCEL_SCALE_SHIFT         = 5;    // maps motion → 0..255 (delta >> shift)
+static const uint16_t ACCEL_GATE_MIN_DELTA      = 6;   // noise gate on motion envelope (raw L1 delta)
+static const uint8_t  ACCEL_SCALE_SHIFT         = 4;    // maps motion → 0..255 (delta >> shift)
 
 #endif // CONFIG_H

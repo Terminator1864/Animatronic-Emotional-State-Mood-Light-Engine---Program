@@ -78,13 +78,15 @@ uint16_t EmotionEngine::adjacencyWeight(uint8_t fromIdx, uint8_t toIdx) const {
 
 uint16_t EmotionEngine::recencyWeight(uint8_t toIdx) const {
   uint16_t pen = 0;
-  for (uint8_t k=0;k<HIST_N;k++){
+  // age = 0 is most recent (last written), up to HIST_N-1 is oldest
+  for (uint8_t age = 0; age < HIST_N; ++age){
+    uint8_t k = (uint8_t)((historyIdx + HIST_N - 1 - age) % HIST_N);
     if (history[k] == toIdx) {
-      uint8_t factor = (uint8_t)((HIST_N - k) * 40); // stronger push to diversify
+      uint8_t factor = (uint8_t)((HIST_N - age) * 40);
       pen += factor;
     }
   }
-  uint16_t maxPen = 240;
+  const uint16_t maxPen = 240;
   uint16_t p = (pen > maxPen) ? maxPen : pen;
   return (uint16_t)(maxPen - p);
 }
@@ -99,9 +101,12 @@ uint16_t EmotionEngine::patternRecencyWeight(uint8_t fromIdx, uint8_t toIdx) con
 }
 
 void EmotionEngine::setExternalBias(uint8_t arousalBias, uint8_t valenceBias, bool valid){
-  extArousal  = arousalBias;
-  extValence  = valenceBias;
   extBiasValid = valid;
+  if (!valid) return;
+
+  const uint8_t K = 2; // larger K = more smoothing (K=2 is gentle)
+  extArousal += (int16_t(arousalBias) - extArousal) >> K;
+  extValence += (int16_t(valenceBias) - extValence) >> K;
 }
 
 // Map each Mood to a signed (valence, arousal) in [-100..+100]
@@ -128,23 +133,39 @@ EmotionVec EmotionEngine::moodVec(uint8_t i) const {
   }
 }
 
-// Turn external bias (0..255) into signed [-100..+100], dot with mood, scale → 0..200
+// Turn external bias (0..255) into weighted boost that works for calm and active.
+// - extArousal: 0 = very calm, 255 = very active
+// - extValence: 0..255 (128 ≈ neutral). If you don't feed valence yet, it will be ~128.
 uint16_t EmotionEngine::biasWeight(uint8_t toIdx) const {
   if (!extBiasValid) return 0;
 
-  // Map 0..255 -> -100..+100 (128~neutral)
-  int16_t bA = ((int16_t)extArousal * 200 / 255) - 100;
-  int16_t bV = ((int16_t)extValence * 200 / 255) - 100;
+  EmotionVec mv = moodVec(toIdx);     // mv.valence, mv.arousal in [-100..+100]
 
-  EmotionVec mv = moodVec(toIdx);
+  // ---- AROUSAL TERM (two-sided but always positive gain) ----
+  // Boost high-arousal moods proportionally to extArousal,
+  // and boost low-arousal moods when extArousal is low.
+  // Both parts are in 0..100, sum to 0..200.
+  uint16_t posA = (mv.arousal > 0) ? (uint16_t)mv.arousal : 0;   // 0..100
+  uint16_t negA = (mv.arousal < 0) ? (uint16_t)(-mv.arousal) : 0;// 0..100
 
-  // Dot product in [-20000..+20000]
-  int32_t dot = (int32_t)bA * (int32_t)mv.arousal + (int32_t)bV * (int32_t)mv.valence;
+  // Scale extArousal 0..255 → 0..100 with integer math
+  uint16_t aHi  = (uint16_t)((posA * (uint16_t)extArousal) / 255);          // 0..100
+  uint16_t aLow = (uint16_t)((negA * (uint16_t)(255 - extArousal)) / 255);  // 0..100
+  uint16_t arousalBoost = aHi + aLow;                                       // 0..200
 
-  // Scale to approx 0..200; ignore negatives (don’t punish, just don’t boost)
-  // 20000 / 100 = 200
-  int16_t boost = (int16_t)(dot / 100);
-  if (boost < 0) boost = 0;
-  if (boost > 200) boost = 200;
-  return (uint16_t)boost;
+  // ---- VALENCE TERM (signed; still clamps to positive only) ----
+  // Map 0..255 → -100..+100 (128 ≈ 0)
+  int16_t bV = ((int16_t)extValence * 200 / 255) - 100;      // -100..+100
+  // dot valence; keep positive component only (don’t punish)
+  int16_t vDot = (int16_t)mv.valence * bV;                   // [-10000..+10000]
+  int16_t valenceBoost = vDot / 100;                         // [-100..+100]
+  if (valenceBoost < 0) valenceBoost = 0;                    // 0..100
+
+  // ---- Combine and clamp ----
+  uint16_t boost = arousalBoost + (uint16_t)valenceBoost;    // 0..300
+  boost = (boost * 3) / 2;
+  if (boost > 200) boost = 200;                              // cap to match other weights
+
+  return boost;
 }
+
