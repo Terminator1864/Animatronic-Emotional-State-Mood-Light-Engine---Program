@@ -78,7 +78,6 @@ uint16_t EmotionEngine::adjacencyWeight(uint8_t fromIdx, uint8_t toIdx) const {
 
 uint16_t EmotionEngine::recencyWeight(uint8_t toIdx) const {
   uint16_t pen = 0;
-  // age = 0 is most recent (last written), up to HIST_N-1 is oldest
   for (uint8_t age = 0; age < HIST_N; ++age){
     uint8_t k = (uint8_t)((historyIdx + HIST_N - 1 - age) % HIST_N);
     if (history[k] == toIdx) {
@@ -125,7 +124,7 @@ EmotionVec EmotionEngine::moodVec(uint8_t i) const {
     case M::Surprise:      return { +10,  +85 }; // near-neutral valence, high arousal
     case M::Sadness:       return { -80,  -50 };
     case M::Melancholy:    return { -60,  -65 };
-    case M::Anger:         return { -70,  +75 }; // negative valence, high arousal
+    case M::Anger:         return { -70,  +75 };
     case M::Panic:         return { -90,  +95 };
     case M::Fear:          return { -85,  +80 };
     case M::Sleepy:        return {  +5,  -90 };
@@ -133,39 +132,42 @@ EmotionVec EmotionEngine::moodVec(uint8_t i) const {
   }
 }
 
-// Turn external bias (0..255) into weighted boost that works for calm and active.
-// - extArousal: 0 = very calm, 255 = very active
-// - extValence: 0..255 (128 ≈ neutral). If you don't feed valence yet, it will be ~128.
 uint16_t EmotionEngine::biasWeight(uint8_t toIdx) const {
   if (!extBiasValid) return 0;
 
-  EmotionVec mv = moodVec(toIdx);     // mv.valence, mv.arousal in [-100..+100]
+  EmotionVec mv = moodVec(toIdx);   // [-100..+100] each
 
-  // ---- AROUSAL TERM (two-sided but always positive gain) ----
-  // Boost high-arousal moods proportionally to extArousal,
-  // and boost low-arousal moods when extArousal is low.
-  // Both parts are in 0..100, sum to 0..200.
-  uint16_t posA = (mv.arousal > 0) ? (uint16_t)mv.arousal : 0;   // 0..100
-  uint16_t negA = (mv.arousal < 0) ? (uint16_t)(-mv.arousal) : 0;// 0..100
+  // AROUSAL: two-sided boost, always ≥0
+  uint16_t posA = (mv.arousal > 0) ? (uint16_t)mv.arousal : 0;
+  uint16_t negA = (mv.arousal < 0) ? (uint16_t)(-mv.arousal) : 0;
+  uint16_t aHi  = (uint16_t)((posA * (uint16_t)extArousal) / 255);
+  uint16_t aLow = (uint16_t)((negA * (uint16_t)(255 - extArousal)) / 255);
+  uint16_t arousalBoost = aHi + aLow;  // 0..200
 
-  // Scale extArousal 0..255 → 0..100 with integer math
-  uint16_t aHi  = (uint16_t)((posA * (uint16_t)extArousal) / 255);          // 0..100
-  uint16_t aLow = (uint16_t)((negA * (uint16_t)(255 - extArousal)) / 255);  // 0..100
-  uint16_t arousalBoost = aHi + aLow;                                       // 0..200
+  // VALENCE: positive component only
+  int16_t bV = ((int16_t)extValence * 200 / 255) - 100;       // -100..+100
+  int16_t vDot = (int16_t)mv.valence * bV;                    // [-10000..+10000]
+  int16_t valenceBoost = vDot / 100;                          // [-100..+100]
+  if (valenceBoost < 0) valenceBoost = 0;
 
-  // ---- VALENCE TERM (signed; still clamps to positive only) ----
-  // Map 0..255 → -100..+100 (128 ≈ 0)
-  int16_t bV = ((int16_t)extValence * 200 / 255) - 100;      // -100..+100
-  // dot valence; keep positive component only (don’t punish)
-  int16_t vDot = (int16_t)mv.valence * bV;                   // [-10000..+10000]
-  int16_t valenceBoost = vDot / 100;                         // [-100..+100]
-  if (valenceBoost < 0) valenceBoost = 0;                    // 0..100
+  uint16_t boost = arousalBoost + (uint16_t)valenceBoost;     // 0..300
+  boost = (boost * 3) / 2;                                    // gentle emphasis
 
-  // ---- Combine and clamp ----
-  uint16_t boost = arousalBoost + (uint16_t)valenceBoost;    // 0..300
-  boost = (boost * 3) / 2;
-  if (boost > 200) boost = 200;                              // cap to match other weights
+  // Startle preference
+  if (millis() < startleUntilMs && startleStrength){
+    using M = Mood; M m = (M)toIdx;
+    uint16_t add = 0;
+    if (m == M::Surprise) add = (startleStrength * 11) / 10;   // +20%
+    else if (m == M::Fear || m == M::Panic) add = (startleStrength * 3) / 4; // 0.75× (was 1.0×)
+    else if (m == M::Joy || m == M::Playful || m == M::Pride) add = startleStrength / 6; // softer spillover
+    boost += add;
+  }
 
+  if (boost > 200) boost = 200;
   return boost;
 }
 
+void EmotionEngine::setStartleBoost(uint8_t strength, uint16_t ms){
+  startleStrength = (strength > 200) ? 200 : strength;
+  startleUntilMs  = millis() + ms;
+}

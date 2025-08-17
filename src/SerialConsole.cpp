@@ -101,23 +101,31 @@ void SerialConsole::handle(uint32_t now) {
       }
 
       if (p[0]=='S'&&p[1]=='E'&&p[2]=='N'&&p[3]=='S'&&p[4]=='E'&&p[5]==':') {
-      if (!sense) { Serial.println(F("[ERROR] SensorInput not attached")); return; }
-      const char* v = p+6;
-      if      (equalsIgnoreCase(v,"ON"))               { sense->setEnabled(true);  Serial.println(F("[SENSE] ENABLED")); }
-      else if (equalsIgnoreCase(v,"OFF"))              { sense->setEnabled(false); Serial.println(F("[SENSE] DISABLED")); }
-      else if (v[0]=='?' && v[1]==0) {
-        Serial.print(F("[SENSE] Enabled=")); Serial.print(sense->isEnabled()?F("YES"):F("NO"));
-        Serial.print(F(" | AccelPresent=")); Serial.println(sense->isPresent()?F("YES"):F("NO"));
-      } else if (v[0]=='D'&&v[1]=='I'&&v[2]=='A'&&v[3]=='G'&&v[4]==':') {
-        const char* dv = v+5;
-        if      (equalsIgnoreCase(dv,"ON"))  { sense->setDiag(true);  Serial.println(F("[SENSE] DIAG=ON")); }
-        else if (equalsIgnoreCase(dv,"OFF")) { sense->setDiag(false); Serial.println(F("[SENSE] DIAG=OFF")); }
-        else { Serial.println(F("[ERROR] SENSE:DIAG:ON|OFF")); }
-      } else {
-        Serial.println(F("[ERROR] SENSE:ON|OFF|?|DIAG:ON|OFF"));
+        if (!sense) { Serial.println(F("[ERROR] SensorInput not attached")); return; }
+        const char* v = p+6;
+        if      (equalsIgnoreCase(v,"ON"))               { sense->setEnabled(true);  Serial.println(F("[SENSE] ENABLED")); }
+        else if (equalsIgnoreCase(v,"OFF"))              { sense->setEnabled(false); Serial.println(F("[SENSE] DISABLED")); }
+        else if (v[0]=='?' && v[1]==0) {
+          Serial.print(F("[SENSE] Enabled=")); Serial.print(sense->isEnabled()?F("YES"):F("NO"));
+          Serial.print(F(" | AccelPresent=")); Serial.println(sense->isPresent()?F("YES"):F("NO"));
+        } else if (v[0]=='D'&&v[1]=='I'&&v[2]=='A'&&v[3]=='G'&&v[4]==':') {
+          const char* dv = v+5;
+          if      (equalsIgnoreCase(dv,"ON"))  { sense->setDiag(true);  Serial.println(F("[SENSE] DIAG=ON")); }
+          else if (equalsIgnoreCase(dv,"OFF")) { sense->setDiag(false); Serial.println(F("[SENSE] DIAG=OFF")); }
+          else { Serial.println(F("[ERROR] SENSE:DIAG:ON|OFF")); }
+        } else {
+          Serial.println(F("[ERROR] SENSE:ON|OFF|?|DIAG:ON|OFF"));
+        }
+        return;
       }
-      return;
-    }
+
+      // HD:<10-250>  (scale dwell/hold %)
+      if ((p[0]=='H'||p[0]=='h') && (p[1]=='D'||p[1]=='d') && p[2]==':') {
+        int v = atoi(p+3); if (v<10) v=10; if (v>250) v=250;
+        ml.setHoldScalePct((uint8_t)v);
+        Serial.print(F("[CMD] HoldScalePct=")); Serial.println(v);
+        return;
+      }
 
       Serial.println(F("[CMD] Unknown. Type ? for help."));
       return;

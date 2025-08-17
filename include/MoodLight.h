@@ -20,8 +20,8 @@ class MoodLight : public IMoodTarget {
 public:
   static const MoodDef MOODS[(int)Mood::Count];
 
-  MoodLight(uint8_t pinRedPwm, uint8_t pinGreenPwm, uint8_t pinBluePwm,
-            uint16_t fadeDurationMs, uint16_t fadeStepMs, uint8_t globalBrightness0to255);
+  MoodLight(uint8_t pinRedPwm, uint8_t pinGreenPwm, uint8_t pinBluePwm, 
+    uint16_t fadeDurationMs, uint16_t fadeStepMs, uint8_t globalBrightness0to255);
 
   // lifecycle
   void begin();
@@ -46,10 +46,18 @@ public:
   Rgb8 currentAltColorScaled() const;
   void jumpToNext(uint32_t nowMs);
   void freezeHold(bool enable);
+  uint8_t holdScalePct() const { return holdScalePct_; }
+
+  // 100 = normal, 60 = faster, 140 = slower (clamped 30..200)
+  void setHoldScalePct(uint8_t pct) {
+    if (pct < 30) pct = 30;
+    if (pct > 200) pct = 200;
+    holdScalePct_ = pct;
+  }
 
   // helpers
   static const char* patternName(PatternType p);
-
+  
 private:
   // pins
   uint8_t pinR, pinG, pinB;
@@ -86,4 +94,6 @@ private:
   // misc
   bool equalsIgnoreCase(const char* a, const char* b);
   void printStatusLine();
+
+  uint8_t holdScalePct_ = 100;
 };

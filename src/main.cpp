@@ -79,20 +79,37 @@ void loop() {
   moodLight.update(now);
 
   const SensorSignals sigs = gSensors.sample(now);
+  static bool prevStartled = false;  
+
   if (gMode.get() == RunMode::ACTIVE && sigs.valid) {
-    uint8_t ep = map(sigs.arousalBias, 0, 255, 35, 200);
-    engine.setPatternPenalty(ep);
-    if (ep != s_lastEp) { s_lastEp = ep; Serial.print(F("[SENSE->ENGINE] PatternPenalty=")); Serial.println(ep); }
+  uint8_t ep = 35 + (uint16_t(sigs.arousalBias) * (200 - 35) + 127) / 255;
+  engine.setPatternPenalty(ep);
 
-    // (optional) small brightness nudge
-    uint8_t baseB = GLOBAL_BRIGHTNESS;
-    uint8_t bump  = sigs.arousalBias / 15;
-    uint16_t gb16 = (uint16_t)baseB + bump;
-    moodLight.setGlobalBrightness((uint8_t)((gb16 > 255)? 255 : gb16));
+  // --- throttle the console spam ---
+  static uint32_t lastEpPrint = 0;
+  int diff = (int)ep - (int)s_lastEp;
+  if ((diff <= -3 || diff >= 3) && (now - lastEpPrint) >= 300) {  // ≥3 change & 300ms apart
+    s_lastEp = ep;
+    lastEpPrint = now;
+    Serial.print(F("[SENSE->ENGINE] PatternPenalty="));
+    Serial.println(ep);
+  }
 
-    // FEED THE BIAS (this is required)
-    engine.setExternalBias(sigs.arousalBias, sigs.valenceBias, true);
+  // (optional) brightness bump stays as-is...
+  uint8_t baseB = GLOBAL_BRIGHTNESS;
+  uint8_t bump  = sigs.arousalBias / 15;
+  uint16_t gb16 = (uint16_t)baseB + bump;
+  moodLight.setGlobalBrightness((uint8_t)((gb16 > 255)? 255 : gb16));
+
+  // feed the bias (unchanged)
+  engine.setExternalBias(sigs.arousalBias, sigs.valenceBias, true);
   } else {
     engine.setExternalBias(128, 128, false);
   }
+
+  // --- Startle: trigger ONLY on the rising edge, use softer boost ---
+  if (sigs.startled && !prevStartled) {
+    engine.setStartleBoost(120, 1200);           // was 180,2000 → gentler and shorter
+  }
+  prevStartled = sigs.startled;
 }

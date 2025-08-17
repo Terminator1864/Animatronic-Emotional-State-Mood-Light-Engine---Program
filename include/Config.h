@@ -35,9 +35,17 @@ static constexpr uint8_t DEFAULT_PATTERN_PENALTY = 120;
 
 // I2C & Sampling
 static const uint16_t LSM303_I2C_CLOCK_KHZ      = 100;  // 100 kHz = safer cabling; bump to 400 if rock solid
-static const uint16_t ACCEL_SAMPLE_INTERVAL_MS  = 16;   // ~62.5 Hz
-static const uint8_t  ACCEL_EWMA_ALPHA          = 24;   // 0..255 (higher = snappier)
-static const uint16_t ACCEL_GATE_MIN_DELTA      = 6;   // noise gate on motion envelope (raw L1 delta)
-static const uint8_t  ACCEL_SCALE_SHIFT         = 4;    // maps motion → 0..255 (delta >> shift)
+#define ACCEL_SAMPLE_INTERVAL_MS   40    // ~25 Hz
+#define ACCEL_EWMA_ALPHA           8     // slow baseline
+#define ACCEL_GATE_MIN_DELTA       24    // calm/active threshold
+#define ACCEL_SCALE_SHIFT          2     // delta >> 2 → 0..255 range
+
+
+// --- Startle Tuning (ACTIVE mode) ---
+#define STARTLE_ABS_ON            140   // absolute delta threshold to arm startle
+#define STARTLE_JERK_ON           110   // jerk threshold to arm startle
+#define STARTLE_CONFIRM_SAMPLES     2   // consecutive samples needed to fire
+#define STARTLE_MS                900   // startle flag duration (ms)
+#define STARTLE_COOLDOWN        4000   // minimum gap between startles (ms)
 
 #endif // CONFIG_H

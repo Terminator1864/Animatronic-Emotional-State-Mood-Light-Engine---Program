@@ -12,11 +12,18 @@ public:
   explicit EmotionEngine(IMoodTarget& tgt) : target(tgt) {}
 
   void begin(uint32_t nowMs);
-  void setRandomAdvance(bool en){ randomAdvance = en; }
+  void setRandomAdvance(bool en){ randomAdvance = en; }    // kept for console compatibility
+  bool isAutoAdvanceEnabled() const { return randomAdvance; }
+
   void setPatternPenalty(uint8_t p){ patternPenalty = p; }
   uint8_t getPatternPenalty() const { return patternPenalty; }
+
+  // External inputs
   void setExternalBias(uint8_t arousalBias, uint8_t valenceBias, bool valid);
-  void operatorNext(uint32_t nowMs); // pick & set a new mood
+  void setStartleBoost(uint8_t strength, uint16_t ms);
+
+  // Pick & set a new mood
+  void operatorNext(uint32_t nowMs);
 
 private:
   IMoodTarget& target;
@@ -28,6 +35,8 @@ private:
   uint8_t historyIdx = 0;
 
   uint8_t patternPenalty = 120;
+
+  // External bias (smoothed)
   uint8_t extArousal = 128;  // 0..255 (128 = neutral)
   uint8_t extValence = 128;  // 0..255 (128 = neutral)
   bool    extBiasValid = false;
@@ -43,6 +52,9 @@ private:
   uint16_t recencyWeight(uint8_t toIdx) const;
   uint16_t patternRecencyWeight(uint8_t fromIdx, uint8_t toIdx) const;
   uint16_t biasWeight(uint8_t toIdx) const;
+
+  uint32_t startleUntilMs = 0;
+  uint8_t  startleStrength = 0;
 };
 
 #endif
